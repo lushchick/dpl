@@ -45,6 +45,7 @@ module DPL
         version = create_app_version(s3_object)
         if !only_create_app_version
           update_app(version)
+          wait_until_deployed if options[:wait_until_deployed]
         end
       end
 
@@ -136,6 +137,21 @@ module DPL
           :auto_create_application => false
         }
         eb.create_application_version(options)
+      end
+
+      # Wait until EB environment update finishes
+      def wait_until_deployed
+        loop do
+          options = {
+            :application_name  => app_name,
+            :environment_names => [env_name]
+          }
+          res = eb.describe_environments(options)
+          deployment = res[:environments].first
+          break if deployment[:abortable_operation_in_progress] == "false"
+          print "."
+          sleep 5
+        end
       end
 
       def update_app(version)
