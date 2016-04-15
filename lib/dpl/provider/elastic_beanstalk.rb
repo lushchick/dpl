@@ -1,3 +1,5 @@
+require 'time'
+
 module DPL
   class Provider
     class ElasticBeanstalk < Provider
@@ -32,6 +34,7 @@ module DPL
       end
 
       def push_app
+        @start_time = Time.now
         create_bucket unless bucket_exists?
 
         if options[:zip_file]
@@ -40,9 +43,9 @@ module DPL
           zip_file = create_zip
         end
 
-        s3_object = upload(archive_name, zip_file)
-        sleep 5 #s3 eventual consistency
-        version = create_app_version(s3_object)
+        # s3_object = upload(archive_name, zip_file)
+        # sleep 5 #s3 eventual consistency
+        version = {} #create_app_version(s3_object)
         if !only_create_app_version
           update_app(version)
           wait_until_deployed if options[:wait_until_deployed]
@@ -141,23 +144,41 @@ module DPL
 
       # Wait until EB environment update finishes
       def wait_until_deployed
+        success = true
+        events = []
+
         loop do
-          options = {
+          environment = eb.describe_environments({
             :application_name  => app_name,
             :environment_names => [env_name]
-          }
-          res = eb.describe_environments(options)
-          deployment = res[:environments].first
-          break if deployment[:abortable_operation_in_progress] == "false"
-          print "."
+          })[:environments].first
+
+          # .with_options({ :http_wire_trace => true })
+          eb.describe_events({
+            :environment_name  => env_name,
+            :start_time        => @start_time.utc.iso8601,
+          })[:events].reverse.each do |event|
+            if event[:severity] == "ERROR" then success = false end
+            message = "#{event[:event_date]}\t[#{event[:severity]}]\t#{event[:message]}"
+            unless events.include?(message)
+              events.push(message)
+              puts message
+            end
+          end
+
+          break if environment[:status] == "Ready"
           sleep 5
         end
+
+        if not success then error("Deployment failed.") end
       end
 
       def update_app(version)
         options = {
-          :environment_name  => env_name,
-          :version_label     => version[:application_version][:version_label]
+          :environment_name  => "PlanoTemp-staging",
+          :version_label     => "travis-7fe290a7f6922e7a95dd305165e777024afcf6ee-1460752114"
+          # :environment_name  => env_name,
+          # :version_label     => version[:application_version][:version_label]
         }
         eb.update_environment(options)
       end
