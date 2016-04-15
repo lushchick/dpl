@@ -158,11 +158,15 @@ module DPL
             :environment_name  => env_name,
             :start_time        => @start_time.utc.iso8601,
           })[:events].reverse.each do |event|
-            if event[:severity] == "ERROR" then success = false end
-            message = "#{event[:event_date]}\t[#{event[:severity]}]\t#{event[:message]}"
+            message = "#{event[:event_date]} [#{event[:severity]}]\t#{event[:message]}"
             unless events.include?(message)
               events.push(message)
-              puts message
+              if event[:severity] == "ERROR"
+                success = false
+                warn(message)
+              else
+                log(message)
+              end
             end
           end
 
